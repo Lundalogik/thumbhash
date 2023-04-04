@@ -10,21 +10,20 @@ final class Thumbhash
     private $height;
     private $pixels;
     private $hash;
-    private $key;
     private $url;
+    private $format;
 
     function __construct(string $file)
     {
-        
+
         $this->content = file_get_contents($file);
-        if (class_exists('Imagick')) {
+        if (class_exists('\Imagick')) {
             list($this->width, $this->height, $this->pixels) = $this->extract_size_and_pixels_with_imagick($this->content);
         } else {
             list($this->width, $this->height, $this->pixels) = $this->extract_size_and_pixels_with_gd($this->content);
         }
 
         $this->hash = $this->RGBAToHash($this->width, $this->height, $this->pixels);
-        $this->key = $this->convertHashToString($this->hash); // You can store this in your database as a string
     }
 
 
@@ -61,24 +60,19 @@ final class Thumbhash
      */
     private function extract_size_and_pixels_with_imagick(string $content): array
     {
-        $image = new Imagick();
+        $image = new \Imagick();
         $image->readImageBlob($content);
+        $d = $image->getImageGeometry();
+        $this->format = strtolower($image->getImageFormat());
+        $width = $d['width'];
+        $height = $d['height'];
+        $size = max($width, $height);
+        $width = round(100 * $width / $size);
+        $height = round(100 * $height / $size);
+        $image->resizeImage($width, $height, \Imagick::FILTER_POINT, 0);
 
-        $width = $image->getImageWidth();
-        $height = $image->getImageHeight();
-
-        $pixels = [];
-        for ($y = 0; $y < $height; $y++) {
-            for ($x = 0; $x < $width; $x++) {
-
-                $pixel = $image->getImagePixelColor($x, $y);
-                $colors = $pixel->getColor(2);
-                $pixels[] = $colors['r'];
-                $pixels[] = $colors['g'];
-                $pixels[] = $colors['b'];
-                $pixels[] = $colors['a'];
-            }
-        }
+        $pixels = $image->exportImagePixels(0, 0, $width, $height, "RGBA", \Imagick::PIXEL_CHAR);
+        $image->clear();
         return [$width, $height, $pixels];
     }
 
@@ -160,7 +154,7 @@ final class Thumbhash
         list($l_dc, $l_ac, $l_scale) = $this->encodeChannel($l, max(3, $lx), max(3, $ly), $w, $h);
         list($p_dc, $p_ac, $p_scale) = $this->encodeChannel($p, 3, 3, $w, $h);
         list($q_dc, $q_ac, $q_scale) = $this->encodeChannel($q, 3, 3, $w, $h);
-        list($a_dc, $a_ac, $a_scale) = $hasAlpha ? $this->encodeChannel($a, 5, 5, $w, $h) : [0,0,0];
+        list($a_dc, $a_ac, $a_scale) = $hasAlpha ? $this->encodeChannel($a, 5, 5, $w, $h) : [0, 0, 0];
 
         $isLandscape = $w > $h;
         $header24 = round(63 * $l_dc) | (round(31.5 + 31.5 * $p_dc) << 6) | (round(31.5 + 31.5 * $q_dc) << 12) | (round(31 * $l_scale) << 18) | ($hasAlpha << 23);
@@ -226,16 +220,6 @@ final class Thumbhash
         }
 
         return [$dc, $ac, $scale];
-    }
-
-    private function convertHashToString(array $hash): string
-    {
-        return rtrim(base64_encode(implode(array_map("chr", $hash))), '=');
-    }
-
-    private function convertStringToHash(string $str): array
-    {
-        return array_map("ord", str_split(base64_decode($str . "=")));
     }
 
     /**
@@ -428,9 +412,28 @@ final class Thumbhash
             }
         }
 
-        array_push($bytes,
-            $b >> 8, $b & 255, $a >> 8, $a & 255, 0, 0, 0, 0,
-            0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130
+        array_push(
+            $bytes,
+            $b >> 8,
+            $b & 255,
+            $a >> 8,
+            $a & 255,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            73,
+            69,
+            78,
+            68,
+            174,
+            66,
+            96,
+            130
         );
 
         $ranges = [[12, 29], [37, 41 + $idat]];
@@ -454,7 +457,7 @@ final class Thumbhash
         }
 
 
-        return 'data:image/png;base64,' . base64_encode(implode('', array_map('chr', $bytes)));
+        return 'data:image/' . $this->format . ';base64,' . base64_encode(implode('', array_map('chr', $bytes)));
     }
 
 
@@ -472,10 +475,9 @@ final class Thumbhash
         return $this->rgbaToDataURL($image['w'], $image['h'], $image['rgba']);
     }
 
-    public function displayThumbhash(string $alt='', string $class='', string $id='', string $data=''): string
+    public function displayThumbhash(string $alt = '', string $class = '', string $id = '', string $data = ''): string
     {
         $this->url = $this->toDataURL($this->hash);
-        return '<img src="' . $this->url . '"'.($class!=''? ' class="'.$class.'"':'').($id!=''? ' id="'.$id.'"':'').($data!=''? ' '.$data:'').' />';
+        return '<img src="' . $this->url . '"' . ($class != '' ? ' class="' . $class . '"' : '') . ($id != '' ? ' id="' . $id . '"' : '') . ($data != '' ? ' ' . $data : '') . ' />';
     }
-
 }
